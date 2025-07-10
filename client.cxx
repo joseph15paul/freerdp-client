@@ -1,7 +1,7 @@
 #include <cstring>
 #include <iostream>
 #include <ostream>
-#define TAG CLIENT_TAG("josepg.common.cmdline")
+#define TAG CLIENT_TAG("custom-client")
 
 #include <freerdp/freerdp.h>
 #include <freerdp/utils/signal.h>
@@ -43,7 +43,6 @@
 #include <freerdp/channels/disp.h>
 #include <freerdp/client/channels.h>
 
-
 #if defined(CHANNEL_AINPUT_CLIENT)
 #include <freerdp/client/ainput.h>
 #include <freerdp/channels/ainput.h>
@@ -68,33 +67,6 @@
 #if defined(CHANNEL_GEOMETRY_CLIENT) || defined(CHANNEL_VIDEO_CLIENT)
 #include <freerdp/gdi/video.h>
 #endif
-
-BOOL option_equals(const char *what, const char *val)
-{
-	WINPR_ASSERT(what);
-	WINPR_ASSERT(val);
-	return _stricmp(what, val) == 0;
-}
-static BOOL freerdp_path_valid(const char *path, BOOL *special)
-{
-	const char DynamicDrives[] = "DynamicDrives";
-	BOOL isPath = FALSE;
-	BOOL isSpecial = 0;
-	if (!path)
-		return FALSE;
-
-	isSpecial =
-		(option_equals("*", path) || option_equals(DynamicDrives, path) || option_equals("%", path))
-			? TRUE
-			: FALSE;
-	if (!isSpecial)
-		isPath = winpr_PathFileExists(path);
-
-	if (special)
-		*special = isSpecial;
-
-	return isSpecial || isPath;
-}
 
 BOOL freerdp_client_add_dynamic_channel(rdpSettings *settings, size_t count,
 										const char *const *params)
@@ -121,7 +93,6 @@ fail:
 	freerdp_addin_argv_free(_args);
 	return FALSE;
 }
-extern BOOL VCAPITYPE drdynvc_VirtualChannelEntryEx(PCHANNEL_ENTRY_POINTS, PVOID);
 
 static BOOL freerdp_client_load_static_channel_addin(rdpChannels *channels, rdpSettings *settings,
 													 const char *name, void *data)
@@ -134,11 +105,8 @@ static BOOL freerdp_client_load_static_channel_addin(rdpChannels *channels, rdpS
 	if (!pvceex)
 		entry = freerdp_load_channel_addin_entry(name, NULL, NULL, FREERDP_ADDIN_CHANNEL_STATIC);
 
-	printf("Loading 111 static channel: %s\n", name);
 	if (pvceex)
 	{
-		printf("Loading 222 static channel: %s\n", name);
-
 		if (freerdp_channels_client_load_ex(channels, settings, pvceex, data) == 0)
 		{
 			WLog_DBG(TAG, "loading channelEx %s", name);
@@ -147,8 +115,6 @@ static BOOL freerdp_client_load_static_channel_addin(rdpChannels *channels, rdpS
 	}
 	else if (entry)
 	{
-		printf("Loading 333 static channel: %s\n", name);
-
 		if (freerdp_channels_client_load(channels, settings, entry, data) == 0)
 		{
 			WLog_DBG(TAG, "loading channel %s", name);
@@ -156,31 +122,6 @@ static BOOL freerdp_client_load_static_channel_addin(rdpChannels *channels, rdpS
 		}
 	}
 
-	return FALSE;
-}
-
-BOOL freerdp_client_add_static_channel(rdpSettings *settings, size_t count,
-									   const char *const *params)
-{
-	ADDIN_ARGV *_args = NULL;
-
-	if (!settings || !params || !params[0] || (count > INT_MAX))
-		return FALSE;
-
-	if (freerdp_static_channel_collection_find(settings, params[0]))
-		return TRUE;
-
-	_args = freerdp_addin_argv_new(count, params);
-
-	if (!_args)
-		return FALSE;
-
-	if (!freerdp_static_channel_collection_add(settings, _args))
-		goto fail;
-
-	return TRUE;
-fail:
-	freerdp_addin_argv_free(_args);
 	return FALSE;
 }
 
@@ -490,32 +431,34 @@ static int wlf_logon_error_info(freerdp *instance, UINT32 data, UINT32 type)
 #include <stdlib.h>
 
 // Converts BGRA to RGBA and saves as PNG
-int save_bgra_to_png(const char* filename, const uint8_t* bgra_data, int width, int height) {
-    if (!filename || !bgra_data || width <= 0 || height <= 0)
-        return 0;
-
-    // Allocate temporary RGBA buffer
-    uint8_t* rgba_data = (uint8_t*)malloc(width * height * 4);
-    if (!rgba_data)
-        return 0;
-
-    // Convert BGRA -> RGBA
-    for (int i = 0; i < width * height; ++i) {
-        rgba_data[i * 4 + 0] = bgra_data[i * 4 + 2]; // R
-        rgba_data[i * 4 + 1] = bgra_data[i * 4 + 1]; // G
-        rgba_data[i * 4 + 2] = bgra_data[i * 4 + 0]; // B
-        rgba_data[i * 4 + 3] = bgra_data[i * 4 + 3]; // A
-    }
-
-    // Write to PNG
-    int result = stbi_write_png(filename, width, height, 4, rgba_data, width * 4);
-
-    free(rgba_data);
-    return result;
-}
-static BOOL my_BeginPaint(rdpContext* context)
+int save_bgra_to_png(const char *filename, const uint8_t *bgra_data, int width, int height)
 {
-	rdpGdi* gdi = NULL;
+	if (!filename || !bgra_data || width <= 0 || height <= 0)
+		return 0;
+
+	// Allocate temporary RGBA buffer
+	uint8_t *rgba_data = (uint8_t *)malloc(width * height * 4);
+	if (!rgba_data)
+		return 0;
+
+	// Convert BGRA -> RGBA
+	for (int i = 0; i < width * height; ++i)
+	{
+		rgba_data[i * 4 + 0] = bgra_data[i * 4 + 2]; // R
+		rgba_data[i * 4 + 1] = bgra_data[i * 4 + 1]; // G
+		rgba_data[i * 4 + 2] = bgra_data[i * 4 + 0]; // B
+		rgba_data[i * 4 + 3] = bgra_data[i * 4 + 3]; // A
+	}
+
+	// Write to PNG
+	int result = stbi_write_png(filename, width, height, 4, rgba_data, width * 4);
+
+	free(rgba_data);
+	return result;
+}
+static BOOL my_BeginPaint(rdpContext *context)
+{
+	rdpGdi *gdi = NULL;
 
 	WINPR_ASSERT(context);
 
@@ -529,9 +472,9 @@ static BOOL my_BeginPaint(rdpContext* context)
 	printf("BeginPaint: invalid area reset\n");
 	return TRUE;
 }
-static BOOL tf_end_paint(rdpContext* context)
+static BOOL tf_end_paint(rdpContext *context)
 {
-	rdpGdi* gdi = NULL;
+	rdpGdi *gdi = NULL;
 
 	WINPR_ASSERT(context);
 
@@ -541,23 +484,23 @@ static BOOL tf_end_paint(rdpContext* context)
 	WINPR_ASSERT(gdi->primary->hdc);
 	WINPR_ASSERT(gdi->primary->hdc->hwnd);
 	WINPR_ASSERT(gdi->primary->hdc->hwnd->invalid);
-int width = context->settings->DesktopWidth;
-        int height = context->settings->DesktopHeight;
+	int width = context->settings->DesktopWidth;
+	int height = context->settings->DesktopHeight;
 
-        // Save gdi->primary->data (BGRA32) as an image
-        save_bgra_to_png("login.png", gdi->primary->bitmap->data, width, height);	
-				printf("image is saveddd.................................\n");
-	
+	// Save gdi->primary->data (BGRA32) as an image
+	save_bgra_to_png("login.png", gdi->primary->bitmap->data, width, height);
+	printf("image is saveddd.................................\n");
+
 	if (gdi->primary->hdc->hwnd->invalid->null)
 		return TRUE;
 
 	return TRUE;
 }
 
-void freerdp_client_OnChannelConnectedEventHandler(void* context,
-                                                   const ChannelConnectedEventArgs* e)
+void freerdp_client_OnChannelConnectedEventHandler(void *context,
+												   const ChannelConnectedEventArgs *e)
 {
-	rdpClientContext* cctx = (rdpClientContext*)context;
+	rdpClientContext *cctx = (rdpClientContext *)context;
 
 	WINPR_ASSERT(cctx);
 	WINPR_ASSERT(e);
@@ -567,34 +510,34 @@ void freerdp_client_OnChannelConnectedEventHandler(void* context,
 	}
 #if defined(CHANNEL_AINPUT_CLIENT)
 	else if (strcmp(e->name, AINPUT_DVC_CHANNEL_NAME) == 0)
-		cctx->ainput = (AInputClientContext*)e->pInterface;
+		cctx->ainput = (AInputClientContext *)e->pInterface;
 #endif
 #if defined(CHANNEL_RDPEI_CLIENT)
 	else if (strcmp(e->name, RDPEI_DVC_CHANNEL_NAME) == 0)
 	{
-		cctx->rdpei = (RdpeiClientContext*)e->pInterface;
+		cctx->rdpei = (RdpeiClientContext *)e->pInterface;
 	}
 #endif
 #if defined(CHANNEL_RDPGFX_CLIENT)
 	else if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0)
 	{
-		gdi_graphics_pipeline_init(cctx->context.gdi, (RdpgfxClientContext*)e->pInterface);
+		gdi_graphics_pipeline_init(cctx->context.gdi, (RdpgfxClientContext *)e->pInterface);
 	}
 #endif
 #if defined(CHANNEL_GEOMETRY_CLIENT)
 	else if (strcmp(e->name, GEOMETRY_DVC_CHANNEL_NAME) == 0)
 	{
-		gdi_video_geometry_init(cctx->context.gdi, (GeometryClientContext*)e->pInterface);
+		gdi_video_geometry_init(cctx->context.gdi, (GeometryClientContext *)e->pInterface);
 	}
 #endif
 #if defined(CHANNEL_VIDEO_CLIENT)
 	else if (strcmp(e->name, VIDEO_CONTROL_DVC_CHANNEL_NAME) == 0)
 	{
-		gdi_video_control_init(cctx->context.gdi, (VideoClientContext*)e->pInterface);
+		gdi_video_control_init(cctx->context.gdi, (VideoClientContext *)e->pInterface);
 	}
 	else if (strcmp(e->name, VIDEO_DATA_DVC_CHANNEL_NAME) == 0)
 	{
-		gdi_video_data_init(cctx->context.gdi, (VideoClientContext*)e->pInterface);
+		gdi_video_data_init(cctx->context.gdi, (VideoClientContext *)e->pInterface);
 	}
 #endif
 #if defined(CHANNEL_ENCOMSP_CLIENT)
@@ -605,7 +548,7 @@ void freerdp_client_OnChannelConnectedEventHandler(void* context,
 #endif
 }
 
-void wlf_OnChannelConnectedEventHandler(void* context, const ChannelConnectedEventArgs* e)
+void wlf_OnChannelConnectedEventHandler(void *context, const ChannelConnectedEventArgs *e)
 {
 	// wlfContext* wlf = (wlfContext*)context;
 
@@ -629,9 +572,9 @@ void wlf_OnChannelConnectedEventHandler(void* context, const ChannelConnectedEve
 	else
 		freerdp_client_OnChannelConnectedEventHandler(context, e);
 }
-static BOOL wl_pre_connect(freerdp* instance)
+static BOOL wl_pre_connect(freerdp *instance)
 {
-	rdpSettings* settings = NULL;
+	rdpSettings *settings = NULL;
 
 	settings = instance->context->settings;
 	WINPR_ASSERT(settings);
@@ -642,10 +585,10 @@ static BOOL wl_pre_connect(freerdp* instance)
 	return TRUE;
 }
 
-static BOOL tf_desktop_resize(rdpContext* context)
+static BOOL tf_desktop_resize(rdpContext *context)
 {
-	rdpGdi* gdi = NULL;
-	rdpSettings* settings = NULL;
+	rdpGdi *gdi = NULL;
+	rdpSettings *settings = NULL;
 
 	WINPR_ASSERT(context);
 
@@ -654,10 +597,10 @@ static BOOL tf_desktop_resize(rdpContext* context)
 
 	gdi = context->gdi;
 	return gdi_resize(gdi, freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth),
-	                  freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight));
+					  freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight));
 }
 
-static BOOL wl_post_connect(freerdp* instance)
+static BOOL wl_post_connect(freerdp *instance)
 {
 	if (!instance || !instance->context)
 		return FALSE;
@@ -665,23 +608,23 @@ static BOOL wl_post_connect(freerdp* instance)
 	// wlfContext* context = (wlfContext*)instance->context;
 	// WINPR_ASSERT(context);
 
-	rdpSettings* settings = instance->context->settings;
+	rdpSettings *settings = instance->context->settings;
 	WINPR_ASSERT(settings);
 
-	const char* title = "FreeRDP";
-	const char* wtitle = freerdp_settings_get_string(settings, FreeRDP_WindowTitle);
+	const char *title = "FreeRDP";
+	const char *wtitle = freerdp_settings_get_string(settings, FreeRDP_WindowTitle);
 	if (wtitle)
 		title = wtitle;
 
-	const char* app_id = "wlfreerdp";
-	const char* wmclass = freerdp_settings_get_string(settings, FreeRDP_WmClass);
+	const char *app_id = "wlfreerdp";
+	const char *wmclass = freerdp_settings_get_string(settings, FreeRDP_WmClass);
 	if (wmclass)
 		app_id = wmclass;
 
 	if (!gdi_init(instance, PIXEL_FORMAT_BGRA32))
 		return FALSE;
 
-	rdpGdi* gdi = instance->context->gdi;
+	rdpGdi *gdi = instance->context->gdi;
 
 	if (!gdi || (gdi->width < 0) || (gdi->height < 0))
 		return FALSE;
@@ -703,7 +646,7 @@ static BOOL wl_post_connect(freerdp* instance)
 	// 		h = sh;
 	// }
 	printf("Setting window title: %s\n", title);
-instance->context->update->BeginPaint = my_BeginPaint;
+	instance->context->update->BeginPaint = my_BeginPaint;
 	instance->context->update->DesktopResize = tf_desktop_resize;
 	instance->context->update->EndPaint = tf_end_paint;
 
@@ -753,15 +696,15 @@ static int wfl_client_start(rdpContext *context)
 
 static int wlfreerdp_run(freerdp *instance)
 {
-		DWORD nCount = 0;
+	DWORD nCount = 0;
 	DWORD status = 0;
 	DWORD result = 0;
-	HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
+	HANDLE handles[MAXIMUM_WAIT_OBJECTS] = {0};
 
 	if (!instance)
 		return -1;
 	BOOL rc = freerdp_connect(instance);
-if (!rc)
+	if (!rc)
 	{
 		result = freerdp_get_last_error(instance->context);
 		WLog_ERR(TAG, "connection failure 0x%08" PRIx32, result);
@@ -823,34 +766,31 @@ int main(int argc, char *argv[])
 	RDP_CLIENT_ENTRY_POINTS clientEntryPoints;
 	rdpContext *context = NULL;
 	rdpSettings *settings = NULL;
-	// wlfContext* wlc = NULL;
 	wLog *root = WLog_GetRoot();
 	WLog_SetLogLevel(root, WLOG_DEBUG); // or WLOG_DEBUG, WLOG_INFO, etc.
-
-	// freerdp_client_warn_deprecated(argc, argv);
 
 	RdpClientEntry(&clientEntryPoints);
 	context = freerdp_client_context_new(&clientEntryPoints);
 
 	if (!context)
 		goto fail;
-	// wlc = (wlfContext*)context;
+
+	if (!stream_dump_register_handlers(context, CONNECTION_STATE_MCS_CREATE_REQUEST, FALSE))
+		goto fail;
+
 	settings = context->settings;
 
 	freerdp_settings_set_string(settings, FreeRDP_ServerHostname, "127.0.0.1");
 	freerdp_settings_set_string(settings, FreeRDP_Username, "user");
 	freerdp_settings_set_string(settings, FreeRDP_Password, "root");
 
-	freerdp_settings_set_bool(settings, FreeRDP_NetworkAutoDetect, TRUE);
-	freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE); // Don't do this in production
+	freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE); // TODO Don't do this in production
 	freerdp_settings_set_uint32(settings, FreeRDP_ConnectionType, CONNECTION_TYPE_AUTODETECT);
-	(!freerdp_settings_set_bool(settings, FreeRDP_RemoteFxCodec, TRUE) ||
-	 !freerdp_settings_set_bool(settings, FreeRDP_SupportGraphicsPipeline, TRUE));
-	freerdp_settings_set_bool(settings, FreeRDP_SupportDynamicChannels, TRUE);
+	freerdp_settings_set_bool(settings, FreeRDP_SupportGraphicsPipeline, TRUE);
 
 	if (freerdp_client_start(context) != 0)
 		goto fail;
-	// print_rdp_settings(settings);
+
 	rc = wlfreerdp_run(context->instance);
 
 	if (freerdp_client_stop(context) != 0)
