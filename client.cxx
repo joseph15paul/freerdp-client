@@ -1,72 +1,80 @@
-#include <cstring>
 #include <iostream>
-#include <ostream>
-#define TAG CLIENT_TAG("custom-client")
-
 #include <freerdp/freerdp.h>
+
+#include <freerdp/client/cliprdr.h>
+#include <freerdp/client/channels.h>
+
 #include <freerdp/utils/signal.h>
-#include <winpr/wtypes.h>
 #include <winpr/wlog.h>
-#include <freerdp/settings.h>
-#include <freerdp/client.h>
-#include <freerdp/channels/urbdrc.h>
-#include <freerdp/locale/locale.h>
-#include <freerdp/channels/channels.h>
-
-#include <winpr/assert.h>
-#include <winpr/string.h>
-#include <winpr/crt.h>
-#include <winpr/wlog.h>
-#include <winpr/path.h>
-#include <winpr/ncrypt.h>
-#include <winpr/environment.h>
-#include <winpr/timezone.h>
-
-#if defined(CHANNEL_AINPUT_CLIENT)
-#include <freerdp/channels/ainput.h>
-#endif
 
 #include <freerdp/channels/audin.h>
 #include <freerdp/channels/echo.h>
-
-#include <freerdp/client/cmdline.h>
-#include <freerdp/version.h>
-#include <freerdp/client.h>
-
-#include <freerdp/channels/drdynvc.h>
-#include <freerdp/channels/cliprdr.h>
-#include <freerdp/channels/encomsp.h>
-#include <freerdp/channels/rdpear.h>
-#include <freerdp/channels/rdp2tcp.h>
-#include <freerdp/channels/remdesk.h>
-#include <freerdp/channels/rdpsnd.h>
 #include <freerdp/channels/disp.h>
-#include <freerdp/client/channels.h>
+#include <freerdp/channels/rdpear.h>
+#include <freerdp/channels/remdesk.h>
+#include <freerdp/channels/drdynvc.h>
+#include <freerdp/channels/rdpsnd.h>
 
-#if defined(CHANNEL_AINPUT_CLIENT)
-#include <freerdp/client/ainput.h>
-#include <freerdp/channels/ainput.h>
-#endif
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
-#if defined(CHANNEL_VIDEO_CLIENT)
-#include <freerdp/client/video.h>
-#include <freerdp/channels/video.h>
-#endif
+#define TAG CLIENT_TAG("custom-client")
 
-#if defined(CHANNEL_RDPGFX_CLIENT)
-#include <freerdp/client/rdpgfx.h>
-#include <freerdp/channels/rdpgfx.h>
-#include <freerdp/gdi/gfx.h>
-#endif
+typedef struct
+{
+	rdpClientContext common;
 
-#if defined(CHANNEL_GEOMETRY_CLIENT)
-#include <freerdp/client/geometry.h>
-#include <freerdp/channels/geometry.h>
-#endif
+	/* Channels */
+} tfContext;
 
-#if defined(CHANNEL_GEOMETRY_CLIENT) || defined(CHANNEL_VIDEO_CLIENT)
-#include <freerdp/gdi/video.h>
-#endif
+typedef struct
+{
+	FreeRDP_Settings_Keys_Bool settingId;
+	const char *channelName;
+	void *args;
+} ChannelToLoad;
+
+void tf_OnChannelConnectedEventHandler(void *context, const ChannelConnectedEventArgs *e)
+{
+
+	tfContext *tf = (tfContext *)context;
+
+	WINPR_ASSERT(tf);
+	WINPR_ASSERT(e);
+
+	if (strcmp(e->name, RAIL_SVC_CHANNEL_NAME) == 0)
+	{
+	}
+	else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
+	{
+		CliprdrClientContext *clip = (CliprdrClientContext *)e->pInterface;
+		WINPR_ASSERT(clip);
+		clip->custom = context;
+	}
+	else
+		freerdp_client_OnChannelConnectedEventHandler(&tf->common, e);
+}
+
+void tf_OnChannelDisconnectedEventHandler(void *context, const ChannelDisconnectedEventArgs *e)
+{
+
+	tfContext *tf = (tfContext *)context;
+
+	WINPR_ASSERT(tf);
+	WINPR_ASSERT(e);
+
+	if (strcmp(e->name, RAIL_SVC_CHANNEL_NAME) == 0)
+	{
+	}
+	else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
+	{
+		CliprdrClientContext *clip = (CliprdrClientContext *)e->pInterface;
+		WINPR_ASSERT(clip);
+		clip->custom = NULL;
+	}
+	else
+		freerdp_client_OnChannelDisconnectedEventHandler(&tf->common, e);
+}
 
 BOOL freerdp_client_add_dynamic_channel(rdpSettings *settings, size_t count,
 										const char *const *params)
@@ -125,12 +133,6 @@ static BOOL freerdp_client_load_static_channel_addin(rdpChannels *channels, rdpS
 	return FALSE;
 }
 
-typedef struct
-{
-	FreeRDP_Settings_Keys_Bool settingId;
-	const char *channelName;
-	void *args;
-} ChannelToLoad;
 BOOL freerdp_client_load_addins(rdpChannels *channels, rdpSettings *settings)
 {
 	ChannelToLoad dynChannels[] = {
@@ -217,18 +219,6 @@ BOOL freerdp_client_load_channels(freerdp *instance)
 	return TRUE;
 }
 
-// Callback function to verify the certificate
-BOOL verify_x509_certificate(freerdp *instance, const unsigned char *common_name,
-							 const unsigned long subject, const char *issuer,
-							 const UINT16 fingerprint, DWORD host_mismatch)
-{
-	printf("Verifying certificate:\n");
-	printf("Common Name: %s\n", common_name);
-	printf("Issuer: %s\n", issuer);
-	printf("Host Mismatch: %s\n", host_mismatch ? "Yes" : "No");
-	return TRUE;
-}
-
 SSIZE_T client_common_retry_dialog(freerdp *instance, const char *what, size_t current,
 								   void *userarg)
 {
@@ -245,6 +235,8 @@ static void set_default_callbacks(freerdp *instance)
 {
 	WINPR_ASSERT(instance);
 	instance->RetryDialog = client_common_retry_dialog;
+
+	// TODO more
 }
 
 static BOOL freerdp_client_common_new(freerdp *instance, rdpContext *context)
@@ -345,11 +337,9 @@ int freerdp_client_start(rdpContext *context)
 
 	if (!context || !context->instance || !context->instance->pClientEntryPoints)
 		return ERROR_BAD_ARGUMENTS;
-	std::cout << "client 1\n";
 
 	if (freerdp_settings_get_bool(context->settings, FreeRDP_UseCommonStdioCallbacks))
 		set_default_callbacks(context->instance);
-	std::cout << "client 2\n";
 
 #ifdef WITH_SSO_MIB
 	rdpClientContext *client_context = (rdpClientContext *)context;
@@ -357,12 +347,9 @@ int freerdp_client_start(rdpContext *context)
 	if (!client_context->mibClientWrapper)
 		return ERROR_INTERNAL_ERROR;
 #endif
-	std::cout << "client 3\n";
 
 	pEntryPoints = context->instance->pClientEntryPoints;
 	int res = IFCALLRESULT(CHANNEL_RC_OK, pEntryPoints->ClientStart, context);
-	std::cout << "client 4\n";
-
 	return res;
 }
 
@@ -383,52 +370,6 @@ int freerdp_client_stop(rdpContext *context)
 #endif // WITH_SSO_MIB
 	return rc;
 }
-
-freerdp *freerdp_client_get_instance(rdpContext *context)
-{
-	if (!context || !context->instance)
-		return NULL;
-
-	return context->instance;
-}
-
-HANDLE freerdp_client_get_thread(rdpContext *context)
-{
-	if (!context)
-		return NULL;
-
-	return ((rdpClientContext *)context)->thread;
-}
-static BOOL wlf_client_global_init(void)
-{
-	// NOLINTNEXTLINE(concurrency-mt-unsafe)
-	(void)setlocale(LC_ALL, "");
-
-	if (freerdp_handle_signals() != 0)
-		return FALSE;
-
-	return TRUE;
-}
-
-static void wlf_client_global_uninit(void)
-{
-}
-
-static int wlf_logon_error_info(freerdp *instance, UINT32 data, UINT32 type)
-{
-	const char *str_data = freerdp_get_logon_error_info_data(data);
-	const char *str_type = freerdp_get_logon_error_info_type(type);
-
-	if (!instance || !instance->context)
-		return -1;
-	std::cout << "Logon Error Info %s [%s] " << str_data << " " << str_type << "\n";
-	return 1;
-}
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-
-#include <stdint.h>
-#include <stdlib.h>
 
 // Converts BGRA to RGBA and saves as PNG
 int save_bgra_to_png(const char *filename, const uint8_t *bgra_data, int width, int height)
@@ -456,7 +397,8 @@ int save_bgra_to_png(const char *filename, const uint8_t *bgra_data, int width, 
 	free(rgba_data);
 	return result;
 }
-static BOOL my_BeginPaint(rdpContext *context)
+
+static BOOL tf_begin_paint(rdpContext *context)
 {
 	rdpGdi *gdi = NULL;
 
@@ -472,6 +414,7 @@ static BOOL my_BeginPaint(rdpContext *context)
 	printf("BeginPaint: invalid area reset\n");
 	return TRUE;
 }
+
 static BOOL tf_end_paint(rdpContext *context)
 {
 	rdpGdi *gdi = NULL;
@@ -497,94 +440,6 @@ static BOOL tf_end_paint(rdpContext *context)
 	return TRUE;
 }
 
-void freerdp_client_OnChannelConnectedEventHandler(void *context,
-												   const ChannelConnectedEventArgs *e)
-{
-	rdpClientContext *cctx = (rdpClientContext *)context;
-
-	WINPR_ASSERT(cctx);
-	WINPR_ASSERT(e);
-
-	if (0)
-	{
-	}
-#if defined(CHANNEL_AINPUT_CLIENT)
-	else if (strcmp(e->name, AINPUT_DVC_CHANNEL_NAME) == 0)
-		cctx->ainput = (AInputClientContext *)e->pInterface;
-#endif
-#if defined(CHANNEL_RDPEI_CLIENT)
-	else if (strcmp(e->name, RDPEI_DVC_CHANNEL_NAME) == 0)
-	{
-		cctx->rdpei = (RdpeiClientContext *)e->pInterface;
-	}
-#endif
-#if defined(CHANNEL_RDPGFX_CLIENT)
-	else if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0)
-	{
-		gdi_graphics_pipeline_init(cctx->context.gdi, (RdpgfxClientContext *)e->pInterface);
-	}
-#endif
-#if defined(CHANNEL_GEOMETRY_CLIENT)
-	else if (strcmp(e->name, GEOMETRY_DVC_CHANNEL_NAME) == 0)
-	{
-		gdi_video_geometry_init(cctx->context.gdi, (GeometryClientContext *)e->pInterface);
-	}
-#endif
-#if defined(CHANNEL_VIDEO_CLIENT)
-	else if (strcmp(e->name, VIDEO_CONTROL_DVC_CHANNEL_NAME) == 0)
-	{
-		gdi_video_control_init(cctx->context.gdi, (VideoClientContext *)e->pInterface);
-	}
-	else if (strcmp(e->name, VIDEO_DATA_DVC_CHANNEL_NAME) == 0)
-	{
-		gdi_video_data_init(cctx->context.gdi, (VideoClientContext *)e->pInterface);
-	}
-#endif
-#if defined(CHANNEL_ENCOMSP_CLIENT)
-	else if (strcmp(e->name, ENCOMSP_SVC_CHANNEL_NAME) == 0)
-	{
-		// client_encomsp_init(cctx, (EncomspClientContext*)e->pInterface);
-	}
-#endif
-}
-
-void wlf_OnChannelConnectedEventHandler(void *context, const ChannelConnectedEventArgs *e)
-{
-	// wlfContext* wlf = (wlfContext*)context;
-
-	// WINPR_ASSERT(wlf);
-	WINPR_ASSERT(e);
-
-	if (FALSE)
-	{
-	}
-	else if (strcmp(e->name, RAIL_SVC_CHANNEL_NAME) == 0)
-	{
-	}
-	else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
-	{
-		// wlf_cliprdr_init(wlf->clipboard, (CliprdrClientContext*)e->pInterface);
-	}
-	else if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0)
-	{
-		// wlf_disp_init(wlf->disp, (DispClientContext*)e->pInterface);
-	}
-	else
-		freerdp_client_OnChannelConnectedEventHandler(context, e);
-}
-static BOOL wl_pre_connect(freerdp *instance)
-{
-	rdpSettings *settings = NULL;
-
-	settings = instance->context->settings;
-	WINPR_ASSERT(settings);
-
-	PubSub_SubscribeChannelConnected(instance->context->pubSub, wlf_OnChannelConnectedEventHandler);
-	// PubSub_SubscribeChannelDisconnected(instance->context->pubSub,
-	//                                     wlf_OnChannelDisconnectedEventHandler);
-	return TRUE;
-}
-
 static BOOL tf_desktop_resize(rdpContext *context)
 {
 	rdpGdi *gdi = NULL;
@@ -600,110 +455,150 @@ static BOOL tf_desktop_resize(rdpContext *context)
 					  freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight));
 }
 
-static BOOL wl_post_connect(freerdp *instance)
+/* This function is called to output a System BEEP */
+static BOOL tf_play_sound(rdpContext *context, const PLAY_SOUND_UPDATE *play_sound)
 {
-	if (!instance || !instance->context)
+	/* TODO: Implement */
+	WINPR_UNUSED(context);
+	WINPR_UNUSED(play_sound);
+	return TRUE;
+}
+
+/* This function is called to update the keyboard indocator LED */
+static BOOL tf_keyboard_set_indicators(rdpContext *context, UINT16 led_flags)
+{
+	/* TODO: Set local keyboard indicator LED status */
+	WINPR_UNUSED(context);
+	WINPR_UNUSED(led_flags);
+	return TRUE;
+}
+
+/* This function is called to set the IME state */
+static BOOL tf_keyboard_set_ime_status(rdpContext *context, UINT16 imeId, UINT32 imeState,
+									   UINT32 imeConvMode)
+{
+	if (!context)
 		return FALSE;
 
-	// wlfContext* context = (wlfContext*)instance->context;
-	// WINPR_ASSERT(context);
+	WLog_WARN(TAG,
+			  "KeyboardSetImeStatus(unitId=%04" PRIx16 ", imeState=%08" PRIx32
+			  ", imeConvMode=%08" PRIx32 ") ignored",
+			  imeId, imeState, imeConvMode);
+	return TRUE;
+}
 
-	rdpSettings *settings = instance->context->settings;
+/* Called before a connection is established.
+ * Set all configuration options to support and load channels here. */
+static BOOL tf_pre_connect(freerdp *instance)
+{
+	rdpSettings *settings = NULL;
+
+	WINPR_ASSERT(instance);
+	WINPR_ASSERT(instance->context);
+
+	settings = instance->context->settings;
 	WINPR_ASSERT(settings);
 
-	const char *title = "FreeRDP";
-	const char *wtitle = freerdp_settings_get_string(settings, FreeRDP_WindowTitle);
-	if (wtitle)
-		title = wtitle;
-
-	const char *app_id = "wlfreerdp";
-	const char *wmclass = freerdp_settings_get_string(settings, FreeRDP_WmClass);
-	if (wmclass)
-		app_id = wmclass;
-
-	if (!gdi_init(instance, PIXEL_FORMAT_BGRA32))
+	/* If the callbacks provide the PEM all certificate options can be extracted, otherwise
+	 * only the certificate fingerprint is available. */
+	if (!freerdp_settings_set_bool(settings, FreeRDP_CertificateCallbackPreferPEM, TRUE))
 		return FALSE;
 
-	rdpGdi *gdi = instance->context->gdi;
-
-	if (!gdi || (gdi->width < 0) || (gdi->height < 0))
+	/* Optional OS identifier sent to server */
+	if (!freerdp_settings_set_uint32(settings, FreeRDP_OsMajorType, OSMAJORTYPE_UNIX))
 		return FALSE;
+	if (!freerdp_settings_set_uint32(settings, FreeRDP_OsMinorType, OSMINORTYPE_NATIVE_XSERVER))
+		return FALSE;
+	/* OrderSupport is initialized at this point.
+	 * Only override it if you plan to implement custom order
+	 * callbacks or deactivate certain features. */
+	/* Register the channel listeners.
+	 * They are required to set up / tear down channels if they are loaded. */
+	PubSub_SubscribeChannelConnected(instance->context->pubSub, tf_OnChannelConnectedEventHandler);
+	PubSub_SubscribeChannelDisconnected(instance->context->pubSub,
+										tf_OnChannelDisconnectedEventHandler);
 
-	// if (!wlf_register_pointer(instance->context->graphics))
-	// 	return FALSE;
-
-	UINT32 w = (UINT32)gdi->width;
-	UINT32 h = (UINT32)gdi->height;
-
-	// if (freerdp_settings_get_bool(settings, FreeRDP_SmartSizing) && !context->fullscreen)
-	// {
-	// 	const UINT32 sw = freerdp_settings_get_uint32(settings, FreeRDP_SmartSizingWidth);
-	// 	if (sw > 0)
-	// 		w = sw;
-
-	// 	const UINT32 sh = freerdp_settings_get_uint32(settings, FreeRDP_SmartSizingHeight);
-	// 	if (sh > 0)
-	// 		h = sh;
-	// }
-	printf("Setting window title: %s\n", title);
-	instance->context->update->BeginPaint = my_BeginPaint;
-	instance->context->update->DesktopResize = tf_desktop_resize;
-	instance->context->update->EndPaint = tf_end_paint;
-
-	// instance->context->update->EndPaint = wl_end_paint;
-	// instance->context->update->DesktopResize = wl_resize_display;
+	/* TODO: Any code your client requires */
 	return TRUE;
 }
 
-static BOOL wlf_client_new(freerdp *instance, rdpContext *context)
+/* Called after a RDP connection was successfully established.
+ * Settings might have changed during negotiation of client / server feature
+ * support.
+ *
+ * Set up local framebuffers and paing callbacks.
+ * If required, register pointer callbacks to change the local mouse cursor
+ * when hovering over the RDP window
+ */
+static BOOL tf_post_connect(freerdp *instance)
 {
-	wObject *obj = NULL;
-	if (!instance || !context)
+	rdpContext *context = NULL;
+
+	if (!gdi_init(instance, PIXEL_FORMAT_XRGB32))
 		return FALSE;
-	instance->PreConnect = wl_pre_connect;
-	instance->PostConnect = wl_post_connect;
-	// instance->PostDisconnect = wl_post_disconnect;
-	// instance->LogonErrorInfo = wlf_logon_error_info;
-	// wfl->log = WLog_Get(TAG);
-	// wfl->display = UwacOpenDisplay(NULL, &status);
 
-	// if (!wfl->display || (status != UWAC_SUCCESS) || !wfl->log)
-	// 	return FALSE;
+	context = instance->context;
+	WINPR_ASSERT(context);
+	WINPR_ASSERT(context->update);
 
-	// wfl->displayHandle = CreateFileDescriptorEvent(NULL, FALSE, FALSE,
-	//                                                UwacDisplayGetFd(wfl->display), WINPR_FD_READ);
+	/* With this setting we disable all graphics processing in the library.
+	 *
+	 * This allows low resource (client) protocol parsing.
+	 */
+	if (!freerdp_settings_set_bool(context->settings, FreeRDP_DeactivateClientDecoding, TRUE))
+		return FALSE;
 
-	// if (!wfl->displayHandle)
-	// 	return FALSE;
-
-	// wfl->events = ArrayList_New(FALSE);
-	// if (!wfl->events)
-	// 	return FALSE;
-
-	// obj = ArrayList_Object(wfl->events);
-	// obj->fnObjectNew = uwac_event_clone;
-	// obj->fnObjectFree = free;
-
-	// InitializeCriticalSection(&wfl->critical);
+	context->update->BeginPaint = tf_begin_paint;
+	context->update->EndPaint = tf_end_paint;
+	context->update->PlaySound = tf_play_sound;
+	context->update->DesktopResize = tf_desktop_resize;
+	context->update->SetKeyboardIndicators = tf_keyboard_set_indicators;
+	context->update->SetKeyboardImeStatus = tf_keyboard_set_ime_status;
 	return TRUE;
 }
 
-static int wfl_client_start(rdpContext *context)
+/* This function is called whether a session ends by failure or success.
+ * Clean up everything allocated by pre_connect and post_connect.
+ */
+static void tf_post_disconnect(freerdp *instance)
 {
-	WINPR_UNUSED(context);
-	return 0;
+
+	if (!instance)
+		return;
+
+	if (!instance->context)
+		return;
+
+	PubSub_UnsubscribeChannelConnected(instance->context->pubSub,
+									   tf_OnChannelConnectedEventHandler);
+	PubSub_UnsubscribeChannelDisconnected(instance->context->pubSub,
+										  tf_OnChannelDisconnectedEventHandler);
+	gdi_free(instance);
+	/* TODO : Clean up custom stuff */
 }
 
-static int wlfreerdp_run(freerdp *instance)
+/* RDP main loop.
+ * Connects RDP, loops while running and handles event and dispatch, cleans up
+ * after the connection ends. */
+static DWORD WINAPI tf_client_thread_proc(LPVOID arg)
 {
+	freerdp *instance = (freerdp *)arg;
 	DWORD nCount = 0;
 	DWORD status = 0;
 	DWORD result = 0;
 	HANDLE handles[MAXIMUM_WAIT_OBJECTS] = {0};
-
-	if (!instance)
-		return -1;
 	BOOL rc = freerdp_connect(instance);
+
+	WINPR_ASSERT(instance->context);
+	WINPR_ASSERT(instance->context->settings);
+	if (freerdp_settings_get_bool(instance->context->settings, FreeRDP_AuthenticationOnly))
+	{
+		result = freerdp_get_last_error(instance->context);
+		freerdp_abort_connect_context(instance->context);
+		WLog_ERR(TAG, "Authentication only, exit status 0x%08" PRIx32 "", result);
+		goto disconnect;
+	}
+
 	if (!rc)
 	{
 		result = freerdp_get_last_error(instance->context);
@@ -743,19 +638,82 @@ disconnect:
 	return result;
 }
 
+/* Optional global initializer.
+ * Here we just register a signal handler to print out stack traces
+ * if available. */
+static BOOL tf_client_global_init(void)
+{
+	if (freerdp_handle_signals() != 0)
+		return FALSE;
+
+	return TRUE;
+}
+
+/* Optional global tear down */
+static void tf_client_global_uninit(void)
+{
+}
+
+static int tf_logon_error_info(freerdp *instance, UINT32 data, UINT32 type)
+{
+	const char *str_data = freerdp_get_logon_error_info_data(data);
+	const char *str_type = freerdp_get_logon_error_info_type(type);
+
+	if (!instance || !instance->context)
+		return -1;
+
+	WLog_INFO(TAG, "Logon Error Info %s [%s]", str_data, str_type);
+
+	return 1;
+}
+
+static BOOL tf_client_new(freerdp *instance, rdpContext *context)
+{
+
+	if (!instance || !context)
+		return FALSE;
+
+	instance->PreConnect = tf_pre_connect;
+	instance->PostConnect = tf_post_connect;
+	instance->PostDisconnect = tf_post_disconnect;
+	instance->LogonErrorInfo = tf_logon_error_info;
+	/* TODO: Client display set up */
+	return TRUE;
+}
+
+static void tf_client_free(freerdp *instance, rdpContext *context)
+{
+	/* TODO: Client display tear down */
+}
+
+static int tf_client_start(rdpContext *context)
+{
+	/* TODO: Start client related stuff */
+	WINPR_UNUSED(context);
+	return 0;
+}
+
+static int tf_client_stop(rdpContext *context)
+{
+	/* TODO: Stop client related stuff */
+	WINPR_UNUSED(context);
+	return 0;
+}
+
 static int RdpClientEntry(RDP_CLIENT_ENTRY_POINTS *pEntryPoints)
 {
 	WINPR_ASSERT(pEntryPoints);
+
 	ZeroMemory(pEntryPoints, sizeof(RDP_CLIENT_ENTRY_POINTS));
 	pEntryPoints->Version = RDP_CLIENT_INTERFACE_VERSION;
 	pEntryPoints->Size = sizeof(RDP_CLIENT_ENTRY_POINTS_V1);
-	pEntryPoints->GlobalInit = wlf_client_global_init;
-	pEntryPoints->GlobalUninit = wlf_client_global_uninit;
-	pEntryPoints->ContextSize = 1000;
-	pEntryPoints->ClientNew = wlf_client_new;
-	// pEntryPoints->ClientFree = wlf_client_free;
-	pEntryPoints->ClientStart = wfl_client_start;
-	// pEntryPoints->ClientStop = freerdp_client_common_stop;
+	pEntryPoints->GlobalInit = tf_client_global_init;
+	pEntryPoints->GlobalUninit = tf_client_global_uninit;
+	pEntryPoints->ContextSize = sizeof(tfContext);
+	pEntryPoints->ClientNew = tf_client_new;
+	pEntryPoints->ClientFree = tf_client_free;
+	pEntryPoints->ClientStart = tf_client_start;
+	pEntryPoints->ClientStop = tf_client_stop;
 	return 0;
 }
 
@@ -791,7 +749,7 @@ int main(int argc, char *argv[])
 	if (freerdp_client_start(context) != 0)
 		goto fail;
 
-	rc = wlfreerdp_run(context->instance);
+	rc = (int)tf_client_thread_proc(context->instance);
 
 	if (freerdp_client_stop(context) != 0)
 		rc = -1;
