@@ -34,7 +34,6 @@ typedef struct
 	void *args;
 } ChannelToLoad;
 
-
 UINT16 ascii_to_scancode(const char c)
 {
 	switch (tolower(c))
@@ -112,23 +111,31 @@ UINT16 ascii_to_scancode(const char c)
 	case '9':
 		return 0x0A;
 	case '\n':
-		return 0x1C; // Enter
+		return RDP_SCANCODE_RETURN; // Enter
+	case '\t':
+		return RDP_SCANCODE_TAB; // TAB
 	default:
 		return 0; // unsupported char
 	}
 }
 
+static BOOL flag = FALSE;
+#define RDP_SCANCODE_EXTENDED(_rdp_scancode) (((_rdp_scancode) & KBDEXT) ? TRUE : FALSE)
+
 void send_text(rdpInput *input, const char *text)
 {
 	for (size_t i = 0; i < strlen(text); ++i)
 	{
-		const UINT16 sc = ascii_to_scancode(text[i]);
+		UINT16 sc = ascii_to_scancode(text[i]);
 		if (sc == 0)
-			continue;										 // skip unsupported
-		freerdp_input_send_keyboard_event(input, TRUE, sc);	 // key down
-		usleep(10000); // optional delay: 10ms
-		freerdp_input_send_keyboard_event(input, FALSE, sc); // key up
-		usleep(1000000);										 // optional delay: 10ms
+			continue;
+		UINT16 flags = (RDP_SCANCODE_EXTENDED(sc) ? KBD_FLAGS_EXTENDED : 0);
+		WLog_DBG(TAG, "sending %c : %u", text[i], sc);
+		freerdp_input_send_keyboard_event(input, flags, sc); // key down
+		usleep(1000);
+		flags |= KBD_FLAGS_RELEASE;
+		freerdp_input_send_keyboard_event(input, flags, sc); // key up
+		usleep(1000);										 // optional delay: 10ms
 	}
 	WLog_DBG(TAG, "text sent: %s", text);
 }
@@ -264,7 +271,7 @@ BOOL freerdp_client_load_addins(rdpChannels *channels, rdpSettings *settings)
 	/**
 	 * Step 1: first load dynamic channels according to the settings
 	 */
-	for (auto & dynChannel : dynChannels)
+	for (auto &dynChannel : dynChannels)
 	{
 		if ((dynChannel.settingId == FreeRDP_BOOL_UNUSED) ||
 			freerdp_settings_get_bool(settings, dynChannel.settingId))
@@ -544,11 +551,19 @@ static BOOL tf_end_paint(rdpContext *context)
 	generate_filename(filename, sizeof(filename));
 	save_bgra_to_png(filename, gdi->primary->bitmap->data, width, height);
 	printf("image is saveddd.................................\n");
-		rdpInput* input = context->input;
+	rdpInput *input = context->input;
 
-		send_text(input, "\n");	  // Press Enter
-		send_text(input, "root"); // Type "root"
-		send_text(input, "\n");	  // Press Enter
+	send_text(input, "\n");	  // Press Enter
+	usleep(2 * 1000 * 1000); // Wait for the command to execute
+
+	send_text(input, "root"); // Type "root"
+	send_text(input, "\n");	  // Press Enter
+
+	usleep(2 * 1000 * 1000); // Wait for the command to execute
+	// send_text(input, "\t");	 // Press tab
+	usleep(2 * 1000 * 1000); // Wait for the command to execute
+
+	send_text(input, "\n"); // Press Enter
 	if (gdi->primary->hdc->hwnd->invalid->null)
 		return TRUE;
 
