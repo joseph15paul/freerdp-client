@@ -15,9 +15,6 @@
 #include <freerdp/channels/drdynvc.h>
 #include <freerdp/channels/rdpsnd.h>
 
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-
 #define TAG CLIENT_TAG("custom-client")
 
 typedef struct
@@ -33,6 +30,45 @@ typedef struct
 	const char *channelName;
 	void *args;
 } ChannelToLoad;
+
+#include <websocketpp/config/asio_no_tls.hpp>
+#include <websocketpp/server.hpp>
+#include <nlohmann/json.hpp>
+
+#include <set>
+#include <iostream>
+#include <thread>
+#include <mutex>
+
+typedef websocketpp::server<websocketpp::config::asio> server;
+typedef websocketpp::connection_hdl connection_hdl;
+
+std::set<connection_hdl, std::owner_less<connection_hdl>> clients;
+std::mutex clients_mutex;
+server ws_server;
+
+void on_open(server *s, connection_hdl hdl)
+{
+	std::lock_guard<std::mutex> lock(clients_mutex);
+	clients.insert(hdl);
+	std::cout << "Client connected.\n";
+}
+
+void on_close(server *s, connection_hdl hdl)
+{
+	std::lock_guard<std::mutex> lock(clients_mutex);
+	clients.erase(hdl);
+	std::cout << "Client disconnected.\n";
+}
+
+void broadcast(server &s, const void *message, size_t len)
+{
+	std::lock_guard<std::mutex> lock(clients_mutex);
+	for (auto &hdl : clients)
+	{
+		s.send(hdl, message, len, websocketpp::frame::opcode::binary);
+	}
+}
 
 UINT16 ascii_to_scancode(const char c)
 {
@@ -119,25 +155,188 @@ UINT16 ascii_to_scancode(const char c)
 	}
 }
 
+enum class MouseEventType
+{
+	Move = 0,
+	Down = 1,
+	Up = 2,
+	Wheel = 3
+};
+
+enum class MouseButton
+{
+	Left = 0,
+	Right = 1,
+	Middle = 2,
+	None = 3 // For movement only
+};
+
+enum class KeyboardEventType
+{
+	KeyDown = 0,
+	KeyUp = 1
+};
+
+struct MouseEvent
+{
+	MouseEventType type;
+	MouseButton button;
+	int x;
+	int y;
+	int delta; // optional, for wheel
+};
+
+struct KeyboardEvent
+{
+	KeyboardEventType type;
+	int keyCode;
+};
+
+void handleMousePayload(rdpInput *input, const nlohmann::json &data)
+{
+	if (!input)
+		return;
+
+	auto type = static_cast<MouseEventType>(data["eventType"].get<int>());
+	auto button = static_cast<MouseButton>(data["button"].get<int>());
+	int x = data["x"];
+	int y = data["y"];
+
+	UINT16 flags = 0;
+
+	switch (type)
+	{
+	case MouseEventType::Move:
+		flags = PTR_FLAGS_MOVE;
+		break;
+
+	case MouseEventType::Down:
+		switch (button)
+		{
+		case MouseButton::Left:
+			flags = PTR_FLAGS_DOWN | PTR_FLAGS_BUTTON1;
+			break;
+		case MouseButton::Right:
+			flags = PTR_FLAGS_DOWN | PTR_FLAGS_BUTTON2;
+			break;
+		case MouseButton::Middle:
+			flags = PTR_FLAGS_DOWN | PTR_FLAGS_BUTTON3;
+			break;
+		default:
+			return;
+		}
+		break;
+
+	case MouseEventType::Up:
+		switch (button)
+		{
+		case MouseButton::Left:
+			flags = PTR_FLAGS_BUTTON1;
+			break;
+		case MouseButton::Right:
+			flags = PTR_FLAGS_BUTTON2;
+			break;
+		case MouseButton::Middle:
+			flags = PTR_FLAGS_BUTTON3;
+			break;
+		default:
+			return;
+		}
+		break;
+
+	case MouseEventType::Wheel:
+	{
+		// int delta = data.value("delta", 0);
+		// flags = PTR_FLAGS_WHEEL;
+		// delta = std::clamp(delta, -255, 255);
+		// freerdp_input_send_mouse_event_ex(input, flags, x, y, delta);
+		return;
+	}
+	}
+
+	freerdp_input_send_mouse_event(input, flags, x, y);
+}
+std::unordered_map<int, UINT16> keyCodeToScanCode = {
+	{8, 0x0E},	// Backspace
+	{9, 0x0F},	// Tab
+	{13, 0x1C}, // Enter
+	{16, 0x2A}, // Shift
+	{17, 0x1D}, // Ctrl
+	{18, 0x38}, // Alt
+	{27, 0x01}, // Escape
+	{32, 0x39}, // Space
+
+	{37, 0x4B}, // Left Arrow
+	{38, 0x48}, // Up Arrow
+	{39, 0x4D}, // Right Arrow
+	{40, 0x50}, // Down Arrow
+
+	// Letters A–Z
+	{65, 0x1E}, // A
+	{66, 0x30}, // B
+	{67, 0x2E}, // C
+	{68, 0x20}, // D
+	{69, 0x12}, // E
+	{70, 0x21}, // F
+	{71, 0x22}, // G
+	{72, 0x23}, // H
+	{73, 0x17}, // I
+	{74, 0x24}, // J
+	{75, 0x25}, // K
+	{76, 0x26}, // L
+	{77, 0x32}, // M
+	{78, 0x31}, // N
+	{79, 0x18}, // O
+	{80, 0x19}, // P
+	{81, 0x10}, // Q
+	{82, 0x13}, // R
+	{83, 0x1F}, // S
+	{84, 0x14}, // T
+	{85, 0x16}, // U
+	{86, 0x2F}, // V
+	{87, 0x11}, // W
+	{88, 0x2D}, // X
+	{89, 0x15}, // Y
+	{90, 0x2C}, // Z
+
+	// Digits 0–9
+	{48, 0x0B}, // 0
+	{49, 0x02}, // 1
+	{50, 0x03}, // 2
+	{51, 0x04}, // 3
+	{52, 0x05}, // 4
+	{53, 0x06}, // 5
+	{54, 0x07}, // 6
+	{55, 0x08}, // 7
+	{56, 0x09}, // 8
+	{57, 0x0A}, // 9
+};
+
 static BOOL flag = FALSE;
 #define RDP_SCANCODE_EXTENDED(_rdp_scancode) (((_rdp_scancode) & KBDEXT) ? TRUE : FALSE)
 
-void send_text(rdpInput *input, const char *text)
+void handleKeyboardPayload(rdpInput *input, const nlohmann::json &data)
 {
-	for (size_t i = 0; i < strlen(text); ++i)
+	KeyboardEventType type = static_cast<KeyboardEventType>(data["eventType"].get<int>());
+	int keyCode = data["keyCode"]; // Browser keyCode (NOT scan code)
+
+	// Map browser keyCode to RDP scan code (example uses 1:1)
+	// You should create a proper lookup table for full compatibility
+	UINT16 scancode = keyCodeToScanCode[keyCode];
+
+	UINT16 flags = (RDP_SCANCODE_EXTENDED(scancode) ? KBD_FLAGS_EXTENDED : 0);
+	char a = 'd';
+	if (type == KeyboardEventType::KeyUp)
 	{
-		UINT16 sc = ascii_to_scancode(text[i]);
-		if (sc == 0)
-			continue;
-		UINT16 flags = (RDP_SCANCODE_EXTENDED(sc) ? KBD_FLAGS_EXTENDED : 0);
-		WLog_DBG(TAG, "sending %c : %u", text[i], sc);
-		freerdp_input_send_keyboard_event(input, flags, sc); // key down
-		usleep(1000);
 		flags |= KBD_FLAGS_RELEASE;
-		freerdp_input_send_keyboard_event(input, flags, sc); // key up
-		usleep(1000);										 // optional delay: 10ms
+		a = 'u';
 	}
-	WLog_DBG(TAG, "text sent: %s", text);
+	else
+	{
+		a = 'd';
+	}
+	WLog_DBG(TAG, "sending keystroke %d : %c", keyCode, a);
+	freerdp_input_send_keyboard_event(input, flags, scancode);
 }
 
 void tf_OnChannelConnectedEventHandler(void *context, const ChannelConnectedEventArgs *e)
@@ -477,33 +676,6 @@ int freerdp_client_stop(rdpContext *context)
 	return rc;
 }
 
-// Converts BGRA to RGBA and saves as PNG
-int save_bgra_to_png(const char *filename, const uint8_t *bgra_data, const unsigned int width, const unsigned int height)
-{
-	if (!filename || !bgra_data || width <= 0 || height <= 0)
-		return 0;
-
-	// Allocate temporary RGBA buffer
-	auto *rgba_data = static_cast<uint8_t *>(malloc(width * height * 4));
-	if (!rgba_data)
-		return 0;
-
-	// Convert BGRA -> RGBA
-	for (int i = 0; i < width * height; ++i)
-	{
-		rgba_data[i * 4 + 0] = bgra_data[i * 4 + 2]; // R
-		rgba_data[i * 4 + 1] = bgra_data[i * 4 + 1]; // G
-		rgba_data[i * 4 + 2] = bgra_data[i * 4 + 0]; // B
-		rgba_data[i * 4 + 3] = bgra_data[i * 4 + 3]; // A
-	}
-
-	// Write to PNG
-	int result = stbi_write_png(filename, width, height, 4, rgba_data, width * 4);
-
-	free(rgba_data);
-	return result;
-}
-
 static BOOL tf_begin_paint(rdpContext *context)
 {
 	rdpGdi *gdi = nullptr;
@@ -549,21 +721,17 @@ static BOOL tf_end_paint(rdpContext *context)
 
 	char filename[64];
 	generate_filename(filename, sizeof(filename));
-	save_bgra_to_png(filename, gdi->primary->bitmap->data, width, height);
-	printf("image is saveddd.................................\n");
+	auto *rgba_data = static_cast<uint8_t *>(malloc(width * height * 4));
+	for (int i = 0; i < width * height; ++i)
+	{
+		rgba_data[i * 4 + 0] = gdi->primary->bitmap->data[i * 4 + 3];		 // R
+		rgba_data[i * 4 + 1] = gdi->primary->bitmap->data[i * 4 + 2];		 // G
+		rgba_data[i * 4 + 2] = gdi->primary->bitmap->data[i * 4 + 1];		 // B
+		rgba_data[i * 4 + 3] = 0xff - gdi->primary->bitmap->data[i * 4 + 0]; // A
+	}
+	printf("Image size is w %u  h %u\n", gdi->primary->bitmap->width, gdi->primary->bitmap->height);
+	broadcast(ws_server, rgba_data, gdi->primary->bitmap->scanline * gdi->primary->bitmap->height);
 	rdpInput *input = context->input;
-
-	send_text(input, "\n");	  // Press Enter
-	usleep(2 * 1000 * 1000); // Wait for the command to execute
-
-	send_text(input, "root"); // Type "root"
-	send_text(input, "\n");	  // Press Enter
-
-	usleep(2 * 1000 * 1000); // Wait for the command to execute
-	// send_text(input, "\t");	 // Press tab
-	usleep(2 * 1000 * 1000); // Wait for the command to execute
-
-	send_text(input, "\n"); // Press Enter
 	if (gdi->primary->hdc->hwnd->invalid->null)
 		return TRUE;
 
@@ -859,6 +1027,31 @@ int main(int argc, char *argv[])
 
 	RdpClientEntry(&clientEntryPoints);
 	context = freerdp_client_context_new(&clientEntryPoints);
+	ws_server.clear_access_channels(websocketpp::log::alevel::all);
+	ws_server.set_access_channels(websocketpp::log::alevel::connect | websocketpp::log::alevel::disconnect);
+
+	ws_server.init_asio();
+	ws_server.set_open_handler(std::bind(&on_open, &ws_server, std::placeholders::_1));
+	ws_server.set_close_handler(std::bind(&on_close, &ws_server, std::placeholders::_1));
+
+	ws_server.set_message_handler([&](connection_hdl hdl, server::message_ptr msg)
+	{
+        std::cout << "Received: " << msg->get_payload() << std::endl;
+		nlohmann::json data = nlohmann::json::parse(msg->get_payload());
+
+    std::string type = data["type"];
+    if (type == "mouse") {
+        handleMousePayload(context->input, data);
+    } else if (type == "keyboard") {
+        handleKeyboardPayload(context->input, data);
+    } });
+
+	ws_server.listen(9002);
+	ws_server.start_accept();
+
+	// Run server in separate thread
+	std::thread server_thread([&]()
+							  { ws_server.run(); });
 
 	if (!context)
 		goto fail;
